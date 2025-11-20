@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 
+
 // Configurar el transporte de Nodemailer para Gmail
 const Transporter = nodemailer.createTransport({
     host: "smtp.gmail.com",

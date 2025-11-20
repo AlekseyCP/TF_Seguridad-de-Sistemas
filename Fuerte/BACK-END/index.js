@@ -7,10 +7,10 @@ import FacadeRutas from "./FacadeRutas.js";
 
 
 const app = express();
-const port = process.env.PORT || 4000;
+const port = process.env.PORT || 4001;
 
 
-app.use(cors({ origin: "http://localhost:3000" }));
+app.use(cors({ origin: "http://localhost:3001" }));
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.json());
 

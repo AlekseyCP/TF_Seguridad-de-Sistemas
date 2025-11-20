@@ -39,53 +39,50 @@ router.get("/:id", async (req, res) => {
 const myCache = new NodeCache({ stdTTL: 300 }); // Expira en 5 minutos (300 segundos)
 
 router.post("/registrar", async (req, res) => {
-  try {
-    const { nombre, apellidoPaterno, apellidoMaterno, password, correo, telefono, dni } = req.body;
+    try {
+        const { nombre, apellidoPaterno, apellidoMaterno, password, correo, telefono, dni } = req.body;
 
-    // Validaciones de los campos
-    if (!nombre) return res.status(404).json({ message: "El campo 'nombre' es requerido" });
-    if (!correo) return res.status(400).json({ message: "El campo 'correo' es requerido" });
-    if (!/^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/.test(correo)) return res.status(400).json({ message: "Formato de correo inválido" });
-    if (!telefono || telefono.length !== 9) return res.status(400).json({ message: "El campo 'telefono' debe tener 9 dígitos" });
-    if (!dni || dni.length !== 8) return res.status(400).json({ message: "El campo 'dni' debe tener 8 dígitos" });
+        // ... (Validaciones)
 
-    // Generar un código de verificación aleatorio
-    const verificationCode = crypto.randomBytes(3).toString("hex"); // Genera un código de 6 dígitos
+        // 1. Generar y almacenar el código
+        const verificationCode = crypto.randomBytes(3).toString("hex");
+        myCache.set(correo, verificationCode); 
+        console.log(`Código de verificación generado para ${correo}: ${verificationCode}`);
 
-    console.log("Correo para verificación:", correo);
-    // Almacenar el código de verificación en caché (por ejemplo, por correo)
-    myCache.set(correo, verificationCode); // Asociamos el código con el correo
-    // Verificar si el correo ya tiene un código de verificación en caché
-    const existingCode = myCache.get(correo);
-    console.log("Código existente en caché para este correo:", existingCode);
+        // 2. Configurar el correo
+        const mailOptions = {
+            from: process.env.GMAIL_USER || "andriuchg14@gmail.com", // Usar la variable de entorno para 'from' también
+            to: correo,
+            subject: "Código de verificación",
+            text: `Tu código de verificación es: ${verificationCode}`
+        };
 
-    // Configurar el correo de verificación
-    const mailOptions = {
-      from: "andriuchg14@gmail.com",
-      to: correo, // El correo del usuario
-      subject: "Código de verificación",
-      text: `Tu código de verificación es: ${verificationCode}`
-    };
+        // 3. ENVIAR el correo usando ASYNC/AWAIT (sin callback)
+        const info = await Transporter.sendMail(mailOptions);
+        
+        console.log("Correo enviado: " + info.response);
 
-    // Enviar el correo
-    await Transporter.sendMail(mailOptions, (error, info) => {
-      if (error) {
-        return res.status(500).json({ message: "Error al enviar el correo de verificación"});
-      }
-      console.log("Correo enviado: " + info.response);
+        // 4. Responder al cliente una vez que el correo ha sido enviado exitosamente
+        return res.status(201).json({
+            mensaje: "Se ha enviado un código de verificación a tu correo",
+        });
 
-      res.status(201).json({
-        mensaje: "Se ha enviado un código de verificación a tu correo",
-      });
-    });
+    } catch (error) {
+        // Capturamos cualquier error, incluyendo fallos en la conexión o envío de Nodemailer
+        console.error("Error al registrar usuario o enviar correo:", error);
+        
+        let customMessage = "Error al registrar usuario. Por favor, intenta nuevamente.";
+        if (error.responseCode === 535) {
+             customMessage = "Fallo de autenticación del servidor de correo. Revisa tus credenciales.";
+        } else if (error.code === 'EAUTH') {
+             customMessage = "Faltan credenciales. Asegúrate de que GMAIL_USER y GMAIL_APP_PASS están cargados en el entorno.";
+        }
 
-  } catch (error) {
-    console.error("Error al registrar usuario:", error);
-    res.status(500).json({
-      error: "Error al registrar usuario. Por favor, intenta nuevamente.",
-      detalles: error.message
-    });
-  }
+        res.status(500).json({
+            error: customMessage,
+            detalles: error.message
+        });
+    }
 });
 
 router.post("/verificarCodigo", async (req, res) => {

@@ -1,370 +1,405 @@
 import express from "express";
-import { Orden, ProductoOrden, Producto, Usuario } from "../Models/Relaciones.js"; 
+import { Orden, ProductoOrden, Producto, Usuario } from "../Models/Relaciones.js";
 import crypto from "crypto";
 import NodeCache from "node-cache";
 import Transporter from "../Services/mail.service.js";
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
+import rateLimit from "express-rate-limit";
+import Joi from "joi";
+import sanitizeHtml from "sanitize-html";
 
 const router = express.Router();
-// Endpoint para obtener a todos los usuarios registrados 
-router.get("/", async (req, res) => {
-    try {
-        // Obtener todos los usuarios en la base de datos
-        const usuarios = await Usuario.findAll();
-        res.json(usuarios);  // Aqui se envian a todos los usuarios como respuesta
-    } catch (error) { //Por si existe un error
-        console.error("Error al obtener usuarios:", error);
-        res.status(500).json({ error: "Error interno del servidor" });
-    }
+
+/* ====================================================================
+   Configuration & Helpers
+   ==================================================================== */
+// Cache for short-lived verification codes. In production use Redis or similar.
+const myCache = new NodeCache({ stdTTL: 300, checkperiod: 60 }); // 5 minutes TTL
+const cacheContraseña = new NodeCache({ stdTTL: 300, checkperiod: 60 });
+
+const SALT_ROUNDS = Number(process.env.SALT_ROUNDS) || 12;
+const JWT_SECRET = process.env.JWT_SECRET || "please_set_a_strong_secret_in_env";
+const JWT_EXPIRATION = process.env.JWT_EXPIRATION || "2h";
+
+// Rate limiters
+const loginLimiter = rateLimit({ windowMs: 60 * 1000, max: 5, message: { message: "Demasiados intentos, espere un momento." } });
+const generalLimiter = rateLimit({ windowMs: 1000, max: 20 });
+
+// Validation schemas (Joi) - strict validation mitigates injection and bad input
+const registerSchema = Joi.object({
+  nombre: Joi.string().min(2).max(100).required(),
+  apellidoPaterno: Joi.string().allow(null, "").max(100),
+  apellidoMaterno: Joi.string().allow(null, "").max(100),
+  password: Joi.string().min(8).max(128).required(),
+  correo: Joi.string().email().required(),
+  telefono: Joi.string().pattern(/^\d{9}$/).required(),
+  dni: Joi.string().pattern(/^\d{8}$/).required()
 });
 
-// Obtener un usuario específico a partir de su ID
-router.get("/:id", async (req, res) => {
-    try {
-        const id = parseInt(req.params.id);
-        const usuario = await Usuario.findByPk(id);
-        
-        if (usuario) {
-            res.json(usuario); 
-        } else {
-            res.status(404).json({ mensaje: "Usuario no encontrado" });
-        }
-    } catch (error) {
-        console.error("Error al buscar el usuario por ID:", error);
-        res.status(500).json({ error: "Error interno del servidor" });
-    }
+const loginSchema = Joi.object({
+  correo: Joi.string().email().required(),
+  password: Joi.string().min(8).max(128).required()
 });
 
+const emailSchema = Joi.object({ correo: Joi.string().email().required() });
 
-// Usamos un caché en memoria para almacenar códigos de verificación temporalmente
-const myCache = new NodeCache({ stdTTL: 300 }); // Expira en 5 minutos (300 segundos)
+const verificationSchema = Joi.object({ correo: Joi.string().email().required(), codigo: Joi.string().alphanum().min(4).max(12).required() });
 
-router.post("/registrar", async (req, res) => {
-  try {
-    const { nombre, apellidoPaterno, apellidoMaterno, password, correo, telefono, dni } = req.body;
-
-    // Validaciones de los campos
-    if (!nombre) return res.status(404).json({ message: "El campo 'nombre' es requerido" });
-    if (!correo) return res.status(400).json({ message: "El campo 'correo' es requerido" });
-    if (!/^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/.test(correo)) return res.status(400).json({ message: "Formato de correo inválido" });
-    if (!telefono || telefono.length !== 9) return res.status(400).json({ message: "El campo 'telefono' debe tener 9 dígitos" });
-    if (!dni || dni.length !== 8) return res.status(400).json({ message: "El campo 'dni' debe tener 8 dígitos" });
-
-    // Generar un código de verificación aleatorio
-    const verificationCode = crypto.randomBytes(3).toString("hex"); // Genera un código de 6 dígitos
-
-    console.log("Correo para verificación:", correo);
-    // Almacenar el código de verificación en caché (por ejemplo, por correo)
-    myCache.set(correo, verificationCode); // Asociamos el código con el correo
-    // Verificar si el correo ya tiene un código de verificación en caché
-    const existingCode = myCache.get(correo);
-    console.log("Código existente en caché para este correo:", existingCode);
-
-    // Configurar el correo de verificación
-    const mailOptions = {
-      from: "andriuchg14@gmail.com",
-      to: correo, // El correo del usuario
-      subject: "Código de verificación",
-      text: `Tu código de verificación es: ${verificationCode}`
-    };
-
-    // Enviar el correo
-    await Transporter.sendMail(mailOptions, (error, info) => {
-      if (error) {
-        return res.status(500).json({ message: "Error al enviar el correo de verificación"});
+// Auth middleware: verify JWT and attach user info
+function auth(required = true) {
+  return (req, res, next) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader) {
+        if (!required) return next();
+        return res.status(401).json({ message: "Token requerido" });
       }
-      console.log("Correo enviado: " + info.response);
+      const token = authHeader.split(" ")[1];
+      if (!token) return res.status(401).json({ message: "Token inválido" });
 
-      res.status(201).json({
-        mensaje: "Se ha enviado un código de verificación a tu correo",
-      });
-    });
+      const payload = jwt.verify(token, JWT_SECRET);
+      req.user = payload; // { id, rol, iat, exp }
+      return next();
+    } catch (err) {
+      return res.status(403).json({ message: "Token inválido o expirado" });
+    }
+  };
+}
 
+// Role check middleware
+function requireAdmin(req, res, next) {
+  if (!req.user || req.user.rol !== "admin") return res.status(403).json({ message: "Acceso restringido" });
+  next();
+}
+
+// Helper: generate cryptographically secure 6-digit code as string
+function generate6DigitCode() {
+  // crypto.randomInt is secure and returns number between 0 and 999999 inclusive
+  const n = crypto.randomInt(0, 1000000);
+  return n.toString().padStart(6, "0");
+}
+
+// Helper: sanitize user-controlled HTML/text inputs to prevent XSS when stored and later rendered
+function sanitizeInput(value) {
+  if (typeof value !== "string") return value;
+  return sanitizeHtml(value, { allowedTags: [], allowedAttributes: {} });
+}
+
+/* ====================================================================
+   Routes
+   ==================================================================== */
+
+// GET / - List users (protected, admin only)  -- Mitigates Broken Access Control (A01)
+router.get("/", auth(), requireAdmin, generalLimiter, async (req, res) => {
+  try {
+    const usuarios = await Usuario.findAll({ attributes: { exclude: ["password"] } }); // never return password
+    return res.json(usuarios);
   } catch (error) {
-    console.error("Error al registrar usuario:", error);
-    res.status(500).json({
-      error: "Error al registrar usuario. Por favor, intenta nuevamente.",
-      detalles: error.message
-    });
+    console.error("Error al obtener usuarios:", error.message);
+    return res.status(500).json({ error: "Error interno del servidor" });
   }
 });
 
-router.post("/verificarCodigo", async (req, res) => {
-  const {nombre, apellidoPaterno, apellidoMaterno, password, codigo, correo, telefono, dni } = req.body;
+// GET /:id - Obtener usuario por id (protected, user must be owner or admin)
+router.get("/:id", auth(), generalLimiter, async (req, res) => {
   try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(400).json({ message: "ID inválido" });
 
-    if (!codigo) {
-      return res.status(400).json({ message: "El campo 'código' es requerido" });
-    }
-    // Obtener el código almacenado en la caché
-    const storedCode = myCache.get(correo);
-    // Depurar el valor de la clave almacenada en la caché
-    console.log("Código almacenado en la caché:", storedCode);
-    if (!storedCode) {
-      return res.status(404).json({ message: "No se encontró un código de verificación para este correo" });
-    }
+    // solo propietario o admin
+    if (req.user.id !== id && req.user.rol !== "admin") return res.status(403).json({ message: "No autorizado" });
 
-    // Verificar el código
-    if (storedCode !== codigo) {
-      return res.status(400).json({ message: "Código incorrecto" });
-    }
+    const usuario = await Usuario.findByPk(id, { attributes: { exclude: ["password"] } });
+    if (!usuario) return res.status(404).json({ message: "Usuario no encontrado" });
 
-    // El código es correcto, puedes realizar cualquier acción adicional
-    // Ejemplo: Marcar al usuario como verificado en la base de datos si lo deseas.
+    return res.json(usuario);
+  } catch (error) {
+    console.error("Error al buscar el usuario por ID:", error.message);
+    return res.status(500).json({ error: "Error interno del servidor" });
+  }
+});
+
+/* ---------------------------------------------------------------
+   Registro y verificación por correo
+   - Input validation
+   - Password hashing
+   - Secure verification code generation
+   - Avoid logging sensitive values
+   --------------------------------------------------------------- */
+router.post("/registrar", async (req, res) => {
+  try {
+    const { error, value } = registerSchema.validate(req.body);
+    if (error) return res.status(400).json({ message: error.details[0].message });
+
+    // sanitize fields that will be stored
+    const nombre = sanitizeInput(value.nombre);
+    const apellidoPaterno = sanitizeInput(value.apellidoPaterno || "");
+    const apellidoMaterno = sanitizeInput(value.apellidoMaterno || "");
+    const correo = value.correo.toLowerCase();
+    const telefono = value.telefono;
+    const dni = value.dni;
+
+    // Check if correo already exists
+    const exists = await Usuario.findOne({ where: { correo } });
+    if (exists) return res.status(409).json({ message: "El correo ya está registrado" });
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(value.password, SALT_ROUNDS);
+
+    // Generate verification code and store in cache
+    const verificationCode = generate6DigitCode();
+    myCache.set(correo, verificationCode);
+
+    // Prepare email
+    const mailOptions = {
+      from: process.env.MAIL_FROM || "no-reply@example.com",
+      to: correo,
+      subject: "Código de verificación",
+      text: `Tu código de verificación es: ${verificationCode}. Expira en 5 minutos.`
+    };
+
+    // Create user in DB but mark as not verified (campo "verificado" boolean)
     const nuevoUsuario = await Usuario.create({
-      nombre, apellidoPaterno, apellidoMaterno, password, correo, telefono, dni
+      nombre,
+      apellidoPaterno,
+      apellidoMaterno,
+      password: hashedPassword,
+      correo,
+      telefono,
+      dni,
+      verificado: false // requiere verificación por correo
     });
 
-    res.status(200).json({ message: "Correo verificado correctamente",
-    usuario: nuevoUsuario });
+    // Send email (await promise - do not leak details on failure)
+    try {
+      await Transporter.sendMail(mailOptions);
+      return res.status(201).json({ mensaje: "Se ha enviado un código de verificación a tu correo" });
+    } catch (mailErr) {
+      console.error("Error al enviar correo de verificación:", mailErr.message);
+      // remove the created user to avoid unverified stale accounts (optional)
+      await nuevoUsuario.destroy();
+      return res.status(500).json({ message: "No se pudo enviar el correo de verificación" });
+    }
+  } catch (error) {
+    console.error("Error al registrar usuario:", error.message);
+    return res.status(500).json({ message: "Error al registrar usuario" });
+  }
+});
+
+// POST /verificarCodigo - Verifica el código y activa la cuenta
+router.post("/verificarCodigo", async (req, res) => {
+  try {
+    const { error, value } = verificationSchema.validate(req.body);
+    if (error) return res.status(400).json({ message: error.details[0].message });
+
+    const correo = value.correo.toLowerCase();
+    const codigo = value.codigo;
+
+    const storedCode = myCache.get(correo);
+    if (!storedCode) return res.status(404).json({ message: "No se encontró un código o expiró" });
+
+    if (storedCode !== codigo) return res.status(400).json({ message: "Código incorrecto" });
+
+    // Mark user as verified
+    const usuario = await Usuario.findOne({ where: { correo } });
+    if (!usuario) return res.status(404).json({ message: "Usuario no encontrado" });
+
+    usuario.verificado = true;
+    await usuario.save();
 
     myCache.del(correo);
 
+    return res.status(200).json({ message: "Correo verificado correctamente" });
   } catch (error) {
-    console.error("Error al verificar el código:", error);
-    res.status(500).json({ error: "Error al verificar el código" });
+    console.error("Error al verificar el código:", error.message);
+    return res.status(500).json({ message: "Error al verificar el código" });
   }
 });
 
-
-router.post('/iniciarSesion', async (req, res) => {
-  const { correo, password } = req.body;
-
-  if (!correo || !password) {
-    return res.status(400).json({ message: "Correo y contraseña son requeridos" }); // Código 400 para mala solicitud
-  }
-
+/* ---------------------------------------------------------------
+   Autenticación (login) - compare bcrypt and issue JWT
+   - Rate limited to mitigate brute force
+   --------------------------------------------------------------- */
+router.post('/iniciarSesion', loginLimiter, async (req, res) => {
   try {
-    if (!/^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/.test(correo)) {
-      return res.status(400).json({ message: "Formato de correo inválido" }); // Código 400 para errores de formato
-    }
+    const { error, value } = loginSchema.validate(req.body);
+    if (error) return res.status(400).json({ message: error.details[0].message });
+
+    const correo = value.correo.toLowerCase();
+    const password = value.password;
 
     const usuario = await Usuario.findOne({ where: { correo } });
-    if (!usuario) {
-      return res.status(404).json({ message: "Usuario no encontrado" }); // Código 404 si el usuario no existe
-    }
+    if (!usuario) return res.status(404).json({ message: "Usuario no encontrado" });
 
-    if (usuario.estado === false) {
-      return res.status(403).json({ message: "Su cuenta ha sido inhabilitada. Por favor, contacte al soporte." }); // Código 403 para cuenta inhabilitada
-    }
+    if (usuario.estado === false) return res.status(403).json({ message: "Cuenta inhabilitada" });
+    if (!usuario.verificado) return res.status(403).json({ message: "Cuenta no verificada" });
 
-    if (password !== usuario.password) {
-      return res.status(401).json({ message: "Contraseña incorrecta" }); // Código 401 para contraseña incorrecta
-    }
+    const match = await bcrypt.compare(password, usuario.password);
+    if (!match) return res.status(401).json({ message: "Correo o contraseña incorrectos" });
 
-    return res.status(200).json({
-      message: "Inicio de sesión exitoso",
-      user: {
-        id: usuario.id,
-        nombre: usuario.nombre,
-        apellidoPaterno: usuario.apellidoPaterno,
-        apellidoMaterno: usuario.apellidoMaterno,
-        correo: usuario.correo,
-      },
-    });
+    // Issue JWT (do not include sensitive info)
+    const token = jwt.sign({ id: usuario.id, rol: usuario.rol || "user" }, JWT_SECRET, { expiresIn: JWT_EXPIRATION });
+
+    return res.status(200).json({ message: "Inicio de sesión exitoso", token });
   } catch (error) {
-    console.error("Error en el inicio de sesión:", error);
-    return res.status(500).json({ message: "Error interno del servidor" }); // Código 500 para errores del servidor
+    console.error('Error en el inicio de sesión:', error.message);
+    return res.status(500).json({ message: 'Error interno del servidor' });
   }
 });
 
-const cacheContraseña = new NodeCache({ stdTTL: 300 }); // Expira en 5 minutos (300 segundos)
-// Endpoint para consultar a la base de datos si existe un correo (se utiliza para poder establecer nueva contraseña)
+/* ---------------------------------------------------------------
+   Recuperación de contraseña: enviar código y verificar
+   - Uses cacheContraseña for short-lived codes
+   - Rate limits and validation
+   --------------------------------------------------------------- */
 router.post('/verificarCorreo', async (req, res) => {
-  const { correo } = req.body; // Obtenemos el correo del cuerpo de la solicitud
-  console.log("Correo recibido:", correo); // Log para verificar que el correo se está recibiendo correctamente
-
   try {
-    const usuario = await Usuario.findOne({ where: { correo } }); // Verifica si el usuario existe
-    console.log("Usuario encontrado:", usuario); // Log para ver si el usuario existe
+    const { error, value } = emailSchema.validate(req.body);
+    if (error) return res.status(400).json({ message: error.details[0].message });
 
-    if (!usuario) {
-      return res.status(404).json({ message: 'El correo no existe' });
-    }
+    const correo = value.correo.toLowerCase();
+    const usuario = await Usuario.findOne({ where: { correo } });
+    if (!usuario) return res.status(404).json({ message: 'El correo no existe' });
 
-    const codigoVerificación = crypto.randomBytes(3).toString("hex");
-    cacheContraseña.set(correo, codigoVerificación); // Guardar el código en caché
+    const codigoVerificacion = generate6DigitCode();
+    cacheContraseña.set(correo, codigoVerificacion);
 
-    // Configuramos el correo a enviar al usuario
     const mail = {
-      from: "lll",
-      to: correo, // El correo del usuario
+      from: process.env.MAIL_FROM || "no-reply@example.com",
+      to: correo,
       subject: "Recuperación de cuenta",
-      text: `Tu código para recuperar tu cuenta es: ${codigoVerificación}`
+      text: `Tu código para recuperar tu cuenta es: ${codigoVerificacion}. Expira en 5 minutos.`
     };
 
-    // Enviamos el correo
-    await Transporter.sendMail(mail, (error, info) => {
-      if (error) {
-        console.error('Error al enviar el correo:', error);
-        return res.status(500).json({ message: 'Error al enviar el correo' });
-      } else {
-        console.log("Correo enviado: " + info.response);
-        return res.status(200).json({ message: 'El correo existe. Código enviado.' });
-      }
-    });
+    try {
+      await Transporter.sendMail(mail);
+      return res.status(200).json({ message: 'El correo existe. Código enviado.' });
+    } catch (mailErr) {
+      console.error('Error al enviar el correo:', mailErr.message);
+      return res.status(500).json({ message: 'Error al enviar el correo' });
+    }
   } catch (error) {
-    console.error('Error al verificar el correo:', error);
+    console.error('Error al verificar el correo:', error.message);
     return res.status(500).json({ message: 'Ocurrió un error al verificar el correo.' });
   }
 });
 
 router.post('/codigoContrasenia', async (req, res) => {
-  const {email,codigo } = req.body;
-
   try {
-    // Obtén el código almacenado en caché
-    console.log('Email:',email);
-    console.log('Codigo:',codigo);
+    const { error, value } = verificationSchema.validate(req.body);
+    if (error) return res.status(400).json({ message: error.details[0].message });
+
+    const email = value.correo.toLowerCase();
+    const codigo = value.codigo;
+
     const codigoGenerado = cacheContraseña.get(email);
-    console.log('Código generado en caché:', codigoGenerado);
-    if (!codigoGenerado) {
-      return res.status(400).json({ message: 'Código expirado. Solicita uno nuevo.' });
-    }
+    if (!codigoGenerado) return res.status(400).json({ message: 'Código expirado. Solicita uno nuevo.' });
+    if (codigoGenerado !== codigo) return res.status(400).json({ message: 'Código inválido.' });
 
-    if (codigoGenerado !== codigo) {
-      return res.status(400).json({ message: 'Código inválido.' });
-    }
-
-    // Código válido, puedes borrar el código para evitar reutilización
     cacheContraseña.del(email);
-
-    res.status(200).json({ message: 'Código verificado correctamente.' });
+    return res.status(200).json({ message: 'Código verificado correctamente.' });
   } catch (error) {
-    console.error('Error al verificar el código:', error);
-    res.status(500).json({ message: 'Error al verificar el código.' });
+    console.error('Error al verificar el código:', error.message);
+    return res.status(500).json({ message: 'Error al verificar el código.' });
   }
 });
 
-//Endpoint que nos va a permitir reestablecer una contraseña para un correo existente
+// Endpoint to reset password - requires verification step prior to calling this
 router.put('/restablecerContrasena', async (req, res) => {
-  const { correo, password } = req.body;
   try {
-    const user = await Usuario.findOne({ where: { correo } });
-    if (user) {
-      // Actualiza la contraseña del usuario sin hash
-      user.password = password; // Reemplaza la contraseña antigua con la nueva
-      await user.save(); // Guarda los cambios
-      
-      return res.status(200).json({ message: 'Contraseña actualizada con éxito' });
-    } else {
-      return res.status(404).json({ message: 'Correo no encontrado' });
-    }
+    const { correo, password } = req.body;
+    // Minimal validation
+    const { error } = Joi.object({ correo: Joi.string().email().required(), password: Joi.string().min(8).required() }).validate({ correo, password });
+    if (error) return res.status(400).json({ message: error.details[0].message });
+
+    const user = await Usuario.findOne({ where: { correo: correo.toLowerCase() } });
+    if (!user) return res.status(404).json({ message: 'Correo no encontrado' });
+
+    // Hash the new password
+    user.password = await bcrypt.hash(password, SALT_ROUNDS);
+    await user.save();
+
+    return res.status(200).json({ message: 'Contraseña actualizada con éxito' });
   } catch (error) {
-    console.error('Error al restablecer la contraseña:', error); // Log de error
+    console.error('Error al restablecer la contraseña:', error.message);
     return res.status(500).json({ message: 'Error en el servidor' });
   }
 });
 
-
-router.post('/:id/direcciones', async (req, res) => {
-  const { id } = req.params;
-  const { nuevaDireccion } = req.body;
-
+/* ---------------------------------------------------------------
+   Direcciones (owner-only): sanitize inputs, ensure ownership
+   --------------------------------------------------------------- */
+router.post('/:id/direcciones', auth(), generalLimiter, async (req, res) => {
   try {
-      if (!nuevaDireccion || nuevaDireccion.trim().length === 0) {
-          return res.status(400).json({ error: "La dirección no puede estar vacía" });
-      }
+    const { id } = req.params;
+    const { nuevaDireccion } = req.body;
 
-      const usuario = await Usuario.findByPk(id);
+    if (req.user.id !== parseInt(id, 10) && req.user.rol !== "admin") return res.status(403).json({ error: "No autorizado" });
+    if (!nuevaDireccion || !nuevaDireccion.trim()) return res.status(400).json({ error: "La dirección no puede estar vacía" });
 
-      if (!usuario) {
-          return res.status(404).json({ error: "Usuario no encontrado" });
-      }
+    const usuario = await Usuario.findByPk(id);
+    if (!usuario) return res.status(404).json({ error: "Usuario no encontrado" });
 
-      // Agrega la nueva dirección al array de direcciones
-      usuario.direcciones = [...(usuario.direcciones || []), nuevaDireccion];
+    const safe = sanitizeInput(nuevaDireccion);
+    usuario.direcciones = [...(usuario.direcciones || []), safe];
+    await usuario.save();
 
-      await usuario.save();
-      res.json({ direcciones: usuario.direcciones });
+    return res.json({ direcciones: usuario.direcciones });
   } catch (error) {
-      console.error("Error al agregar dirección:", error);
-      res.status(500).json({ error: "Error interno del servidor" });
+    console.error("Error al agregar dirección:", error.message);
+    return res.status(500).json({ error: "Error interno del servidor" });
   }
 });
 
-
-// Endpoint para editar una dirección específica
-router.put('/:id/direcciones/:index', async (req, res) => {
-  const { id, index } = req.params;
-  const { nuevaDireccion } = req.body;
-
-  console.log(`Editar Dirección - Usuario ID: ${id}, Índice: ${index}, Nueva Dirección: ${nuevaDireccion}`);
-
+router.put('/:id/direcciones/:index', auth(), generalLimiter, async (req, res) => {
   try {
-      if (!nuevaDireccion || nuevaDireccion.trim().length === 0) {
-          console.log("La dirección está vacía");
-          return res.status(400).json({ error: "La dirección no puede estar vacía" });
-      }
+    const { id, index } = req.params;
+    const { nuevaDireccion } = req.body;
 
-      const usuario = await Usuario.findByPk(id);
+    if (req.user.id !== parseInt(id, 10) && req.user.rol !== "admin") return res.status(403).json({ error: "No autorizado" });
+    if (!nuevaDireccion || !nuevaDireccion.trim()) return res.status(400).json({ error: "La dirección no puede estar vacía" });
 
-      if (!usuario) {
-          console.log("Usuario no encontrado");
-          return res.status(404).json({ error: "Usuario no encontrado" });
-      }
+    const usuario = await Usuario.findByPk(id);
+    if (!usuario) return res.status(404).json({ error: "Usuario no encontrado" });
 
-      const indexInt = parseInt(index, 10);
-      if (isNaN(indexInt) || indexInt < 0 || indexInt >= usuario.direcciones.length) {
-          console.log("Índice de dirección no válido");
-          return res.status(400).json({ error: "Índice de dirección no válido" });
-      }
+    const indexInt = parseInt(index, 10);
+    if (isNaN(indexInt) || indexInt < 0 || indexInt >= (usuario.direcciones || []).length) {
+      return res.status(400).json({ error: "Índice de dirección no válido" });
+    }
 
-      console.log("Antes de editar:", usuario.direcciones);
+    usuario.direcciones[indexInt] = sanitizeInput(nuevaDireccion);
+    await usuario.save();
 
-      // Actualizar la dirección
-      usuario.direcciones[indexInt] = nuevaDireccion;
-      await usuario.save();
-
-      console.log("Después de editar:", usuario.direcciones);
-
-      res.json({ direcciones: usuario.direcciones });
+    return res.json({ direcciones: usuario.direcciones });
   } catch (error) {
-      console.error("Error al actualizar la dirección:", error);
-      res.status(500).json({ error: "Error interno del servidor" });
+    console.error("Error al actualizar la dirección:", error.message);
+    return res.status(500).json({ error: "Error interno del servidor" });
   }
 });
 
-
-
-
-// Endpoint para eliminar una dirección específica
-router.delete('/:id/direcciones/:index', async (req, res) => {
-  const { id, index } = req.params;
-
-  console.log(`Eliminar Dirección - Usuario ID: ${id}, Índice: ${index}`);
-
+router.delete('/:id/direcciones/:index', auth(), generalLimiter, async (req, res) => {
   try {
-      const usuario = await Usuario.findByPk(id);
+    const { id, index } = req.params;
 
-      if (!usuario) {
-          console.log("Usuario no encontrado");
-          return res.status(404).json({ error: "Usuario no encontrado" });
-      }
+    if (req.user.id !== parseInt(id, 10) && req.user.rol !== "admin") return res.status(403).json({ error: "No autorizado" });
 
-      const indexInt = parseInt(index, 10);
-      if (isNaN(indexInt) || indexInt < 0 || indexInt >= usuario.direcciones.length) {
-          console.log("Índice de dirección no válido");
-          return res.status(400).json({ error: "Índice de dirección no válido" });
-      }
+    const usuario = await Usuario.findByPk(id);
+    if (!usuario) return res.status(404).json({ error: "Usuario no encontrado" });
 
-      console.log("Antes de eliminar:", usuario.direcciones);
+    const indexInt = parseInt(index, 10);
+    if (isNaN(indexInt) || indexInt < 0 || indexInt >= (usuario.direcciones || []).length) {
+      return res.status(400).json({ error: "Índice de dirección no válido" });
+    }
 
-      // Eliminar la dirección
-      usuario.direcciones.splice(indexInt, 1);
-      await usuario.save();
+    usuario.direcciones.splice(indexInt, 1);
+    await usuario.save();
 
-      console.log("Después de eliminar:", usuario.direcciones);
-
-      res.json({ direcciones: usuario.direcciones });
+    return res.json({ direcciones: usuario.direcciones });
   } catch (error) {
-      console.error("Error al eliminar la dirección:", error);
-      res.status(500).json({ error: "Error interno del servidor" });
+    console.error("Error al eliminar la dirección:", error.message);
+    return res.status(500).json({ error: "Error interno del servidor" });
   }
 });
-
-
-
-
-
 
 export default router;

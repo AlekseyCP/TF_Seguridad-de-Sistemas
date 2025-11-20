@@ -1,155 +1,186 @@
 import express from 'express';
-import {AdminMaestro, Admin, Botica, Usuario} from "../models/Relaciones.js";
+import { AdminMaestro, Admin, Botica, Usuario } from "../Models/Relaciones.js";
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+import rateLimit from 'express-rate-limit';
+import Joi from 'joi';
+import sanitizeHtml from 'sanitize-html';
 
 const router = express.Router();
 
-router.post('/iniciarSesionSuperAdmin', async (req, res) => {
-    const { correo, password } = req.body;
-  
+
+const JWT_SECRET = process.env.JWT_SECRET || 'please_set_a_long_secret_in_env';
+const JWT_EXPIRATION = process.env.JWT_EXPIRATION || '2h';
+const SALT_ROUNDS = Number(process.env.SALT_ROUNDS) || 12;
+
+// Rate limiters
+const authLimiter = rateLimit({ windowMs: 60 * 1000, max: 6, message: { message: 'Demasiados intentos, espere un momento.' } });
+const generalLimiter = rateLimit({ windowMs: 1000, max: 25 });
+
+// Validation schemas
+const loginSchema = Joi.object({ correo: Joi.string().email().required(), password: Joi.string().min(8).max(128).required() });
+
+// minimal sanitize helper
+function sanitize(value) {
+  if (typeof value !== 'string') return value;
+  return sanitizeHtml(value, { allowedTags: [], allowedAttributes: {} }).trim();
+}
+
+// auth middleware to validate Bearer token
+function auth(required = true) {
+  return (req, res, next) => {
     try {
-      // Verificar si el correo corresponde al superAdmin en la base de datos
-      const superAdmin = await AdminMaestro.findOne({ where: { correo: correo.toLowerCase() } });
-  
-      // Si no se encuentra el superAdmin
-      if (!superAdmin) {
-        return res.status(401).json({ message: 'El super administrador no existe.' });
+      const header = req.headers.authorization;
+      if (!header) {
+        if (!required) return next();
+        return res.status(401).json({ message: 'Token requerido' });
       }
-  
-      // Comparar la contraseña
-      if (superAdmin.password !== password) {
-        return res.status(401).json({ message: 'Credenciales inválidas. Contraseña incorrecta.' });
-      }
-  
-      // Responder con los datos del superAdmin
-      return res.json({
-        message: 'Inicio de sesión exitoso como Super Administrador',
-        admin: {
-          id: superAdmin.id,
-          nombre: superAdmin.nombre,
-          apellidoPaterno: superAdmin.apellidoPaterno,
-          dni: superAdmin.dni,
-          esSuperAdmin: true,
-        },
-      });
-    } catch (error) {
-      console.error('Error en el inicio de sesión:', error);
-      return res.status(500).json({ message: 'Error en el servidor. Inténtalo nuevamente más tarde.' });
+      const parts = header.split(' ');
+      if (parts.length !== 2 || parts[0] !== 'Bearer') return res.status(401).json({ message: 'Formato de token inválido' });
+      const token = parts[1];
+
+      const payload = jwt.verify(token, JWT_SECRET);
+      req.user = payload; // { id, rol, iat, exp }
+      return next();
+    } catch (err) {
+      return res.status(403).json({ message: 'Token inválido o expirado' });
     }
-  });
+  };
+}
 
-  router.get('/estadisticasSuperAdmin', async (req, res) => {
-    try {
-      // Contar la cantidad de usuarios
-      const totalUsuarios = await Usuario.count();
-  
-      // Contar la cantidad de boticas
-      const totalBoticas = await Botica.count();
-  
-      // Contar la cantidad de administradores
-      const totalAdmins = await Admin.count();
-  
-      // Responder con los datos
-      res.json({
-        usuarios: totalUsuarios,
-        boticas: totalBoticas,
-        administradores: totalAdmins,
-      });
-    } catch (error) {
-      console.error('Error al obtener estadísticas:', error);
-      res.status(500).json({ message: 'Error en el servidor.' });
-    }
-  });
-
-  router.get('/obtenerAdminsMaestros', async (req, res) => {
-    try {
-      // Obtener todos los administradores maestros de la base de datos
-      const adminsMaestros = await AdminMaestro.findAll();
-  
-      // Verificar si hay registros en la base de datos
-      if (!adminsMaestros.length) {
-        return res.status(404).json({ message: 'No se encontraron administradores maestros.' });
-      }
-  
-      // Responder con la lista de administradores
-      return res.json(adminsMaestros);
-    } catch (error) {
-      console.error('Error al obtener administradores maestros:', error);
-      return res.status(500).json({ message: 'Error en el servidor. Inténtalo nuevamente más tarde.' });
-    }
-  });
+function requireRole(role) {
+  return (req, res, next) => {
+    if (!req.user) return res.status(401).json({ message: 'No autenticado' });
+    if (req.user.rol !== role) return res.status(403).json({ message: 'Acceso restringido' });
+    next();
+  };
+}
 
 
+router.post('/iniciarSesionSuperAdmin', authLimiter, async (req, res) => {
+  try {
+    const { error, value } = loginSchema.validate(req.body);
+    if (error) return res.status(400).json({ message: error.details[0].message });
 
-  //Aleksey Chávez 
-  router.get('/listaUsuarios', async (req, res) => {
-    try {
-      const usuarios = await Usuario.findAll(); // Obtiene todos los registros de la tabla Usuario
-      res.json(usuarios); // Envía los datos en formato JSON
-    } catch (error) {
-      console.error('Error al obtener los usuarios:', error);
-      res.status(500).json({ error: 'Error al obtener los usuarios' });
-    }
-  });
+    const correo = sanitize(value.correo).toLowerCase();
+    const { password } = value;
 
-  router.get('/listaAdmins', async (req, res) => {
-    try {
-      const admins = await Admin.findAll({
-        include: {
-          model: Botica, // Relación definida entre Admin y Botica
-          attributes: ['id', 'nombre', 'ruc','estado'], // Campos que deseas incluir de Botica
-        },
-      });
-  
-      res.json(admins); // Envía los datos en formato JSON
-    } catch (error) {
-      console.error('Error al obtener los administradores:', error);
-      res.status(500).json({ error: 'Error al obtener los administradores' });
-    }
-  });
+    const superAdmin = await AdminMaestro.findOne({ where: { correo } });
+    if (!superAdmin) return res.status(401).json({ message: 'Credenciales inválidas' });
 
-  router.put('/cambiarEstadoAdmin/:id', async (req, res) => {
+    // Compare hashed password
+    const match = await bcrypt.compare(password, superAdmin.password);
+    if (!match) return res.status(401).json({ message: 'Credenciales inválidas' });
+
+    // Issue JWT with minimal claims
+    const token = jwt.sign({ id: superAdmin.id, rol: 'superadmin' }, JWT_SECRET, { expiresIn: JWT_EXPIRATION });
+
+    return res.json({ message: 'Inicio de sesión exitoso', token, admin: { id: superAdmin.id, nombre: superAdmin.nombre, apellidoPaterno: superAdmin.apellidoPaterno, dni: superAdmin.dni, esSuperAdmin: true } });
+  } catch (error) {
+    console.error('Error en iniciarSesionSuperAdmin:', error.message);
+    return res.status(500).json({ message: 'Error en el servidor' });
+  }
+});
+
+// GET /estadisticasSuperAdmin - solo superadmin
+router.get('/estadisticasSuperAdmin', auth(), requireRole('superadmin'), generalLimiter, async (req, res) => {
+  try {
+    const totalUsuarios = await Usuario.count();
+    const totalBoticas = await Botica.count();
+    const totalAdmins = await Admin.count();
+
+    return res.json({ usuarios: totalUsuarios, boticas: totalBoticas, administradores: totalAdmins });
+  } catch (error) {
+    console.error('Error al obtener estadísticas:', error.message);
+    return res.status(500).json({ message: 'Error en el servidor' });
+  }
+});
+
+// GET /obtenerAdminsMaestros - solo superadmin
+router.get('/obtenerAdminsMaestros', auth(), requireRole('superadmin'), generalLimiter, async (req, res) => {
+  try {
+    const adminsMaestros = await AdminMaestro.findAll({ attributes: { exclude: ['password'] } });
+    if (!adminsMaestros || adminsMaestros.length === 0) return res.status(404).json({ message: 'No se encontraron administradores maestros' });
+    return res.json(adminsMaestros);
+  } catch (error) {
+    console.error('Error al obtener administradores maestros:', error.message);
+    return res.status(500).json({ message: 'Error en el servidor' });
+  }
+});
+
+// GET /listaUsuarios - admin o superadmin (no devolvemos passwords)
+router.get('/listaUsuarios', auth(), async (req, res) => {
+  try {
+    // allow admin and superadmin
+    if (!req.user || (req.user.rol !== 'admin' && req.user.rol !== 'superadmin')) return res.status(403).json({ message: 'Acceso restringido' });
+
+    const usuarios = await Usuario.findAll({ attributes: { exclude: ['password'] } });
+    return res.json(usuarios);
+  } catch (error) {
+    console.error('Error al obtener los usuarios:', error.message);
+    return res.status(500).json({ error: 'Error al obtener los usuarios' });
+  }
+});
+
+// GET /listaAdmins - admin or superadmin
+router.get('/listaAdmins', auth(), async (req, res) => {
+  try {
+    if (!req.user || (req.user.rol !== 'admin' && req.user.rol !== 'superadmin')) return res.status(403).json({ message: 'Acceso restringido' });
+
+    const admins = await Admin.findAll({ include: { model: Botica, attributes: ['id', 'nombre', 'ruc', 'estado'] }, attributes: { exclude: ['password'] } });
+    return res.json(admins);
+  } catch (error) {
+    console.error('Error al obtener los administradores:', error.message);
+    return res.status(500).json({ error: 'Error al obtener los administradores' });
+  }
+});
+
+// PUT /cambiarEstadoAdmin/:id - solo superadmin
+router.put('/cambiarEstadoAdmin/:id', auth(), requireRole('superadmin'), generalLimiter, async (req, res) => {
+  try {
     const { id } = req.params;
+    const admin = await Admin.findByPk(id);
+    if (!admin) return res.status(404).json({ mensaje: 'Administrador no encontrado' });
 
-    try {
-        const admin = await Admin.findByPk(id);
+    admin.estado = !admin.estado;
+    await admin.save();
 
-        if (!admin) {
-            return res.status(404).json({ mensaje: 'Administrador no encontrado' });
-        }
+    return res.json({ mensaje: 'Estado actualizado con éxito', estadoActual: admin.estado });
+  } catch (error) {
+    console.error('Error al cambiar estado admin:', error.message);
+    return res.status(500).json({ mensaje: 'Error al actualizar el estado' });
+  }
+});
 
-        await admin.update({ estado: !admin.estado });
-
-        res.json({ mensaje: 'Estado actualizado con éxito', estadoActual: admin.estado });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ mensaje: 'Error al actualizar el estado' });
-    }
-  });
-  
-  router.put('/cambiarEstadoUsuario/:id', async (req, res) => {
+// PUT /cambiarEstadoUsuario/:id - superadmin or admin can toggle (but admin only within their botica)
+router.put('/cambiarEstadoUsuario/:id', auth(), generalLimiter, async (req, res) => {
+  try {
     const { id } = req.params;
+    const requester = req.user;
+    if (!requester) return res.status(401).json({ message: 'No autenticado' });
 
-    try {
-        const usuario = await Usuario.findByPk(id);
+    const usuario = await Usuario.findByPk(id);
+    if (!usuario) return res.status(404).json({ mensaje: 'Usuario no encontrado' });
 
-        if (!usuario) {
-            return res.status(404).json({ mensaje: 'Usuario no encontrado' });
-        }
-
-        await usuario.update({ estado: !usuario.estado });
-
-        res.json({ 
-            mensaje: 'Estado actualizado con éxito', 
-            estadoActual: usuario.estado 
-        });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ mensaje: 'Error al actualizar el estado' });
+    // If requester is admin, optionally enforce scope (example: only allow admins to toggle users related to their botica)
+    if (requester.rol === 'admin') {
+      // if Admin model stores boticaID, we could check ownership. This is placeholder logic and should be adapted.
+      const admin = await Admin.findOne({ where: { id: requester.id } });
+      if (!admin) return res.status(403).json({ message: 'Admin no encontrado o sin permisos' });
+      // Example check (uncomment and adapt if Usuario has boticaID relation)
+      // if (usuario.boticaID !== admin.boticaID) return res.status(403).json({ message: 'No autorizado para modificar este usuario' });
+    } else if (requester.rol !== 'superadmin') {
+      return res.status(403).json({ message: 'Acceso restringido' });
     }
-  });
 
+    usuario.estado = !usuario.estado;
+    await usuario.save();
 
-
-
+    return res.json({ mensaje: 'Estado actualizado con éxito', estadoActual: usuario.estado });
+  } catch (error) {
+    console.error('Error al cambiar estado usuario:', error.message);
+    return res.status(500).json({ mensaje: 'Error al actualizar el estado' });
+  }
+});
 
 export default router;

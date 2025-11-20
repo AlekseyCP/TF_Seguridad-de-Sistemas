@@ -1,5 +1,5 @@
 import express from "express";
-import {Producto, Marca, Botica, ProductoDetalle, ProductoOrden} from "../models/Relaciones.js";
+import {Producto, Marca, Botica, ProductoDetalle, ProductoOrden} from "../Models/Relaciones.js";
 import { Op } from "sequelize";
 const router = express.Router();
 

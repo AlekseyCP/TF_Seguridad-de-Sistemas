@@ -6,7 +6,7 @@ class Database {
        
             this.sequelize = new Sequelize({
                 dialect: "postgres",
-                database: "Vulnerable",
+                database: "Fuerte",
                 username: "postgres",
                 password: "242839",
                 host: "localhost",
