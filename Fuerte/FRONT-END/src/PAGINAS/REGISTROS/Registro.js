@@ -39,7 +39,7 @@ const Registro = () => {
   
     // Realiza la solicitud POST al backend
     try {
-      const response = await fetch('http://localhost:4000/api/usuarios/registrar', {
+      const response = await fetch('http://localhost:4001/api/usuarios/registrar', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

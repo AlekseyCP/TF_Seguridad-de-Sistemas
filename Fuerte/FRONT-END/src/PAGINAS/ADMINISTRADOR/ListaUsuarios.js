@@ -11,7 +11,7 @@ const ListaUsuarios = () => {
   // Función para obtener los usuarios del backend
   const Usuarios = async () => {
     try {
-      const response = await fetch('http://localhost:4000/api/usuarios'); // URL de tu backend
+      const response = await fetch('http://localhost:4001/api/usuarios'); // URL de tu backend
       if (response.ok) {
         const data = await response.json();
         setUsuarios(data); // Actualizamos el estado con los datos obtenidos

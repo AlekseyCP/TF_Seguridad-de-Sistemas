@@ -19,7 +19,7 @@ const PaginaPago = () => {
     const usuario = JSON.parse(localStorage.getItem('user'));
     const usuarioID = usuario?.id;
     if(usuarioID){
-      fetch(`http://localhost:4000/api/ordenes/${usuarioID}`)
+      fetch(`http://localhost:4001/api/ordenes/${usuarioID}`)
       .then(response => {
         if (!response.ok) {
           throw new Error('Error al obtener los productos del carrito');
@@ -146,7 +146,7 @@ const PaginaPago = () => {
     const usuarioID = usuario?.id;
 
     try {
-      const response = await fetch(`http://localhost:4000/api/ordenes/crearOrden/${usuarioID}`, {
+      const response = await fetch(`http://localhost:4001/api/ordenes/crearOrden/${usuarioID}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -167,7 +167,7 @@ const PaginaPago = () => {
         }));
 
         for (const orden of data.ordenes) {
-          const llenarProductoOrdenResponse = await fetch(`http://localhost:4000/api/ordenes/llenarProductoOrden/${usuarioID}/${orden.id}`, {
+          const llenarProductoOrdenResponse = await fetch(`http://localhost:4001/api/ordenes/llenarProductoOrden/${usuarioID}/${orden.id}`, {
             method: 'POST',
           });
 
@@ -177,11 +177,11 @@ const PaginaPago = () => {
             return;
           }
         }
-        await fetch(`http://localhost:4000/api/ordenes/actualizarStockProductos/${usuarioID}`, {
+        await fetch(`http://localhost:4001/api/ordenes/actualizarStockProductos/${usuarioID}`, {
           method: 'PUT',
         });
         
-        await fetch(`http://localhost:4000/api/ordenes/eliminarCarrito/${usuarioID}`, {
+        await fetch(`http://localhost:4001/api/ordenes/eliminarCarrito/${usuarioID}`, {
           method: 'DELETE',
         });
 

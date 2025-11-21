@@ -43,7 +43,7 @@ const  CrearProducto = () =>{
     const [marcas, setMarcas] = useState([]);
     useEffect(()=>{
         const fetchMarcas = async () =>{
-            const response = await fetch("http://localhost:4000/api/marcas/MarcaAll",{
+            const response = await fetch("http://localhost:4001/api/marcas/MarcaAll",{
                 method: 'GET',
             });
             const data = await response.json();
@@ -96,7 +96,7 @@ const  CrearProducto = () =>{
         const body = {
               nombre: nuevaMarca
           };
-          const response = await fetch('http://localhost:4000/api/marcas/newMarca',{
+          const response = await fetch('http://localhost:4001/api/marcas/newMarca',{
               method: 'POST',
               headers: {
                   'Content-type': 'application/json'
@@ -128,7 +128,7 @@ const  CrearProducto = () =>{
                 categorias: producto.categorias
               };
 
-          const response = await fetch('http://localhost:4000/api/productos/newProductos', {
+          const response = await fetch('http://localhost:4001/api/productos/newProductos', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json', 

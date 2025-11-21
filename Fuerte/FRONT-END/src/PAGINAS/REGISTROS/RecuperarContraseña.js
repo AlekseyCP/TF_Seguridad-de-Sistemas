@@ -14,7 +14,7 @@ const RecuperarContraseña = () => {
   
     try {
       // Petición al endpoint para verificar si el correo existe usando POST con el correo en el cuerpo de la solicitud
-      const response = await fetch('http://localhost:4000/api/usuarios/verificarCorreo', {
+      const response = await fetch('http://localhost:4001/api/usuarios/verificarCorreo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ correo: email }), // Enviamos el correo en el cuerpo de la solicitud

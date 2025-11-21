@@ -30,7 +30,7 @@ const RestablecerContraseñaBotica = () => {
 
     try {
       // Petición para actualizar la contraseña en el backend
-      const response = await fetch('http://localhost:4000/api/admin/restablecerContrasenaAdmin', {
+      const response = await fetch('http://localhost:4001/api/admin/restablecerContrasenaAdmin', {
         method: 'PUT', 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ correo: email, password }), 

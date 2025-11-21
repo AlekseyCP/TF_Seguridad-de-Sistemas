@@ -30,7 +30,7 @@ const ListaProductosBotica = () => {
 
       if (boticaID) {
         try {
-          const respuesta = await fetch(`http://localhost:4000/api/admin/boticaProductos/${boticaID}`);
+          const respuesta = await fetch(`http://localhost:4001/api/admin/boticaProductos/${boticaID}`);
           const resultado = await respuesta.json();
 
           const productosBotica = resultado.map(producto => ({

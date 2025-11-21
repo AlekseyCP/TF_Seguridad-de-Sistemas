@@ -14,7 +14,7 @@ const DetalleProducto = () => {
   useEffect(() => {
     async function fetchStockProducto() {
       try {
-        const response = await fetch(`http://localhost:4000/api/productos/stockProductos/${id}`);
+        const response = await fetch(`http://localhost:4001/api/productos/stockProductos/${id}`);
         if (!response.ok) {
           throw new Error('Error al obtener los datos del stockProducto');
         }

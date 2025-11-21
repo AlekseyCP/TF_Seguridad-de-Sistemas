@@ -76,7 +76,7 @@ const OrdenesBotica = () => {
     const paginationModel = { page: 0, pageSize: 5 };
 
     const buscarOrdenes = async() =>{
-        const response = await fetch(`http://localhost:4000/api/ordenes/OrdenesAll?boticaID=${admin.id}`, {
+        const response = await fetch(`http://localhost:4001/api/ordenes/OrdenesAll?boticaID=${admin.id}`, {
             method:'GET',
         });
         const data = await response.json();

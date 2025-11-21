@@ -97,7 +97,7 @@ const AgregarProducto = () => {
                   })
                   formData.append('imagen', producto.imagen); 
 
-                  const response = await fetch('http://localhost:4000/api/productoDetalle/newDetalle', {
+                  const response = await fetch('http://localhost:4001/api/productoDetalle/newDetalle', {
                     method: 'POST',
                     body: formData,
   

@@ -18,7 +18,7 @@ const ResultadoBusqueda = () => {
   useEffect(() => {
     const fetchProductos = async () => {
       try {
-        const respuesta = await fetch(`http://localhost:4000/api/productoDetalle/searchProductos?nombreProducto=${query}`);
+        const respuesta = await fetch(`http://localhost:4001/api/productoDetalle/searchProductos?nombreProducto=${query}`);
         const data = await respuesta.json();
 
         if (!respuesta.ok) {
@@ -27,7 +27,7 @@ const ResultadoBusqueda = () => {
           return; 
         }
 
-        const baseUrl = `http://localhost:4000/api/productoDetalle/`; 
+        const baseUrl = `http://localhost:4001/api/productoDetalle/`; 
 
         const producto_busqueda = data.ProductosDetalles.map(dato => ({
           id: dato.id || 'Sin ID',

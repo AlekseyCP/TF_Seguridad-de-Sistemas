@@ -16,7 +16,7 @@ const DashboardBotica = () => {
       if (boticaID && fecha) {
         setDatosIngresos(null); 
         try {
-          const respuesta = await fetch(`http://localhost:4000/api/botica/ingresosBotica/${boticaID}/${fecha}`);
+          const respuesta = await fetch(`http://localhost:4001/api/botica/ingresosBotica/${boticaID}/${fecha}`);
           if (respuesta.ok) {
             const datos = await respuesta.json();
             setDatosIngresos(datos);

@@ -7,7 +7,7 @@ function ContenidoTablaAdmin(props) {
 
     const handleEstadoToggle = async () => {
         try {
-            const response = await fetch(`http://localhost:4000/api/adminMaestro/cambiarEstadoAdmin/${admin.id}`, {
+            const response = await fetch(`http://localhost:4001/api/adminMaestro/cambiarEstadoAdmin/${admin.id}`, {
                 method: "PUT",
                 headers: {
                     "Content-Type": "application/json",

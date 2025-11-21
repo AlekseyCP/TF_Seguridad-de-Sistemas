@@ -15,7 +15,7 @@ const CarritoCompras = () => {
     const usuarioID = usuario?.id;
 
     if (usuarioID) {
-      fetch(`http://localhost:4000/api/carrito/productos/${usuarioID}`)
+      fetch(`http://localhost:4001/api/carrito/productos/${usuarioID}`)
         .then(response => {
           if (!response.ok) {
             throw new Error('Error al obtener los productos del carrito');
@@ -45,7 +45,7 @@ const CarritoCompras = () => {
 
     try {
       console.log(`Eliminando producto con ID ${productoID} para el usuario ${usuarioID}`);
-      const response = await fetch(`http://localhost:4000/api/carrito/eliminarProducto/${usuarioID}/${productoID}`, {
+      const response = await fetch(`http://localhost:4001/api/carrito/eliminarProducto/${usuarioID}/${productoID}`, {
         method: 'DELETE',
       });
 
@@ -79,7 +79,7 @@ const CarritoCompras = () => {
     }
 
     try {
-        const response = await fetch(`http://localhost:4000/api/carrito/actualizarCantidad/${usuarioID}/${id}`, {
+        const response = await fetch(`http://localhost:4001/api/carrito/actualizarCantidad/${usuarioID}/${id}`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',

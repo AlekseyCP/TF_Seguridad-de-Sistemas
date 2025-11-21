@@ -14,7 +14,7 @@ const ListaUsuario = () => {
             const admin = JSON.parse(localStorage.getItem("adminMaestro"));
             if (admin) {
                 try {
-                    const respuesta = await fetch(`http://localhost:4000/api/adminMaestro/listaUsuarios`);
+                    const respuesta = await fetch(`http://localhost:4001/api/adminMaestro/listaUsuarios`);
                     const resultado = await respuesta.json();
                     const users = resultado.map((usuario) => ({
                         id: usuario?.id || "Sin ID",

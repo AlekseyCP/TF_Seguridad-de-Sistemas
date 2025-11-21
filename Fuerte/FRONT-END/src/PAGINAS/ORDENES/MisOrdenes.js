@@ -25,7 +25,7 @@ const MisOrdenes = () => {
     const usuario = JSON.parse(localStorage.getItem('user'));
     const usuarioID = usuario?.id;
     if (usuarioID) {
-      fetch(`http://localhost:4000/api/ordenes/ordenesUsuario/${usuarioID}`)
+      fetch(`http://localhost:4001/api/ordenes/ordenesUsuario/${usuarioID}`)
         .then(response => {
           if (!response.ok) {
             throw new Error('Error al obtener las órdenes del usuario');

@@ -102,7 +102,7 @@ const AgregarProducto = () => {
                   })
                   formData.append('imagen', producto.imagen); 
 
-                  const response = await fetch('http://localhost:4000/api/productos/newProducto', {
+                  const response = await fetch('http://localhost:4001/api/productos/newProducto', {
                     method: 'POST',
                     body: formData,
   
@@ -110,7 +110,7 @@ const AgregarProducto = () => {
                   if(response.ok){
                     const data = await response.json();
                     console.log(data);
-                    const stock = await fetch('http://localhost:4000/api/stock/newStock', {
+                    const stock = await fetch('http://localhost:4001/api/stock/newStock', {
                       method: 'POST',
                       headers: {
                         'Content-Type': 'application/json',

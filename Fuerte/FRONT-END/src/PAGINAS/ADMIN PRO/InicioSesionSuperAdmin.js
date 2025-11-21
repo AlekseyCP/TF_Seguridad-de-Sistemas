@@ -11,7 +11,7 @@ const InicioSesionSuperAdmin = () => {
     event.preventDefault();
 
     try {
-      const response = await fetch('http://localhost:4000/api/adminMaestro/iniciarSesionSuperAdmin', {  // Cambia la URL aquí
+      const response = await fetch('http://localhost:4001/api/adminMaestro/iniciarSesionSuperAdmin', {  // Cambia la URL aquí
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ correo: email, password }),

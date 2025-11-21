@@ -113,7 +113,7 @@ const Buscar = ({nombre, marca, handleProductoChange,update}) => {
 
 
     const buscarProducto = async(nombre, marca) =>{
-        const response = await fetch(`http://localhost:4000/api/productos/BusquedaAgrega?nombre=${nombre}&marca=${marca}`, {
+        const response = await fetch(`http://localhost:4001/api/productos/BusquedaAgrega?nombre=${nombre}&marca=${marca}`, {
             method:'GET',
         });
         const data = await response.json();

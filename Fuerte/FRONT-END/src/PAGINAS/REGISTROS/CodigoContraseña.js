@@ -20,7 +20,7 @@ const CodigoContraseña = () => {
 
     try {
       // Petición al backend para verificar el código
-      const response = await fetch('http://localhost:4000/api/usuarios/codigoContrasenia', {
+      const response = await fetch('http://localhost:4001/api/usuarios/codigoContrasenia', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email, codigo: codigo}),

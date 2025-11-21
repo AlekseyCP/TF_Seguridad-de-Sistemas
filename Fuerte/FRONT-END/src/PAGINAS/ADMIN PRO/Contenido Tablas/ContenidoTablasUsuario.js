@@ -7,7 +7,7 @@ function ContenidoTablaUsuario(props) {
     
     const handleEstadoToggle = async () => {
         try {
-            const response = await fetch(`http://localhost:4000/api/adminMaestro/cambiarEstadoUsuario/${usuario.id}`, {
+            const response = await fetch(`http://localhost:4001/api/adminMaestro/cambiarEstadoUsuario/${usuario.id}`, {
                 method: "PUT",
                 headers: {
                     "Content-Type": "application/json",

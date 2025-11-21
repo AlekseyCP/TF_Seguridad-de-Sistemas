@@ -71,7 +71,7 @@ const Header1 = () => {
       }
 
       try {
-        const response = await fetch(`http://localhost:4000/api/carrito/cantidadProductos/${usuarioID}`);
+        const response = await fetch(`http://localhost:4001/api/carrito/cantidadProductos/${usuarioID}`);
 
         if (!response.ok) {
           throw new Error('Error al obtener la cantidad de productos');

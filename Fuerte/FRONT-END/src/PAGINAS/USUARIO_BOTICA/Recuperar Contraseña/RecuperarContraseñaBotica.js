@@ -14,7 +14,7 @@ const RecuperarContraseñaBotica = () => {
   
     try {
       
-      const response = await fetch(`http://localhost:4000/api/admin/verificarCorreoAdmin/${encodeURIComponent(email)}`);
+      const response = await fetch(`http://localhost:4001/api/admin/verificarCorreoAdmin/${encodeURIComponent(email)}`);
   
       const data = await response.json();
   

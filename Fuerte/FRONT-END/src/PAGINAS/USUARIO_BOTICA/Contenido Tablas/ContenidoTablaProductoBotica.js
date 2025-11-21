@@ -18,7 +18,7 @@ function AgregarFilaProductoBotica(props) {
 
   const handleEstadoChange = async () => {
     try {
-      const response = await fetch(`http://localhost:4000/api/admin/cambiarEstado/${producto.id}`, {
+      const response = await fetch(`http://localhost:4001/api/admin/cambiarEstado/${producto.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -40,7 +40,7 @@ function AgregarFilaProductoBotica(props) {
     try {
       console.log(producto.id)
       console.log(stock)
-      const response = await fetch(`http://localhost:4000/api/admin/cambiarStock?id=${producto.id}&stock=${stock}`, {
+      const response = await fetch(`http://localhost:4001/api/admin/cambiarStock?id=${producto.id}&stock=${stock}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

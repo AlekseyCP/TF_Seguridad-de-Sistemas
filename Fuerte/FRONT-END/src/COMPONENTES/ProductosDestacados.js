@@ -9,7 +9,7 @@ const ProductosDestacados = () => {
   useEffect(() => {
     const fetchProductos = async () => {
       try {
-        const response = await fetch('http://localhost:4000/api/productos/ProductosAll');
+        const response = await fetch('http://localhost:4001/api/productos/ProductosAll');
         if (!response.ok) {
           throw new Error('Error al obtener los productos.');
         }

@@ -14,11 +14,11 @@ const BusquedaMedicina = () => {
 
   const fetchData = async () => {
     try {
-      const respuesta = await fetch(`http://localhost:4000/api/productoDetalle/ProductosAll`); 
+      const respuesta = await fetch(`http://localhost:4001/api/productoDetalle/ProductosAll`); 
       const resultado = await respuesta.json();
       console.log(resultado);
   
-      const baseUrl = `http://localhost:4000/api/productoDetalle/`; 
+      const baseUrl = `http://localhost:4001/api/productoDetalle/`; 
   
       const catalogo = resultado.ProductosDetalles.map(dato => ({
         id: dato.id || 'Sin ID',

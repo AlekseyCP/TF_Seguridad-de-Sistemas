@@ -65,7 +65,7 @@ const RegistroAdmin = () => {
 
     // Realiza la solicitud POST al backend
     try {
-      const response = await fetch('http://localhost:4000/api/Admin/registrar', {
+      const response = await fetch('http://localhost:4001/api/Admin/registrar', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

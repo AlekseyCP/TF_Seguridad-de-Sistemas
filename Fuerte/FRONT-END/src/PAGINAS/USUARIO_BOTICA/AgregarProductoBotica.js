@@ -28,7 +28,7 @@ const AgregarProductoBotica = () => {
         // Aquí iría la lógica para guardar el producto, como una llamada a la API.
         console.log("esata funcionando")
         try {
-          const response = await fetch('http://localhost:4000/api/productos/newProducto', {
+          const response = await fetch('http://localhost:4001/api/productos/newProducto', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

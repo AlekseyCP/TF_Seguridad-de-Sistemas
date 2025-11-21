@@ -17,7 +17,7 @@ const InicioSesion = () => {
   
     try {
       // Aquí haces la petición al endpoint de inicio de sesión
-      const response = await fetch('http://localhost:4000/api/usuarios/iniciarSesion', {
+      const response = await fetch('http://localhost:4001/api/usuarios/iniciarSesion', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ correo: email, password: password }), // Envia los datos en el cuerpo de la petición

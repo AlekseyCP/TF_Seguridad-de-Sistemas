@@ -24,7 +24,7 @@ const DashboardSuperAdmin = () => {
   useEffect(() => {
     const fetchEstadisticas = async () => {
       try {
-        const respuesta = await fetch('http://localhost:4000/api/adminMaestro/estadisticasSuperAdmin');
+        const respuesta = await fetch('http://localhost:4001/api/adminMaestro/estadisticasSuperAdmin');
         if (respuesta.ok) {
           const datos = await respuesta.json();
           setEstadisticas(datos); // Actualiza el estado con los datos recibidos

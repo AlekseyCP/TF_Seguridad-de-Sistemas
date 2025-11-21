@@ -20,7 +20,7 @@ const RestablecerContraseña = () => {
     const email = localStorage.getItem('recuperacion');
     try {
       // Petición para actualizar la contraseña en el backend
-      const response = await fetch('http://localhost:4000/api/usuarios/restablecerContrasena', {
+      const response = await fetch('http://localhost:4001/api/usuarios/restablecerContrasena', {
         method: 'PUT', // Cambiar a PUT
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ correo: email, password }), 
